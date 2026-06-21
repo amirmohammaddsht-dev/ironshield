@@ -34,7 +34,7 @@ def is_valid_cidr(cidr: str) -> bool:
 
 def is_valid_telegram_token(token: str) -> bool:
     """Check if a string looks like a valid Telegram bot token."""
-    pattern = r"^\d+:[A-Za-z0-9_-]{35,}$"
+    pattern = r"^\d+:[A-Za-z0-9_-]{30,}$"
     return bool(re.match(pattern, token.strip()))
 
 

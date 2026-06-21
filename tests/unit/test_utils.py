@@ -40,7 +40,7 @@ class TestValidators:
         assert is_valid_cidr("10.8.0.0/33") is False
 
     def test_valid_telegram_token(self):
-        assert is_valid_telegram_token("123456789:ABCdefGHIjklMNOpqrSTUVwxyz12345678") is True
+        assert is_valid_telegram_token("123456789:JA7ZVeeDkqvqoIVqL-hU39-1xmVGC9LE7Gk") is True
 
     def test_invalid_telegram_token(self):
         assert is_valid_telegram_token("not-a-token") is False
