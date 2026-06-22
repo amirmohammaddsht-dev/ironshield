@@ -1,0 +1,35 @@
+name: storm_dns
+display_name: Storm-DNS
+version: "1.2.0"
+author: Storm Team
+source: https://github.com/storm-dns/storm-dns
+license: MIT
+description: >
+  DNS tunneling solution for emergency connectivity.
+  Foreign server runs as DNS Server, Iran server as DNS Client (SOCKS5 proxy).
+  WARNING: Very slow — only used as last-resort fallback.
+  Requires domain with NS record pointing to foreign server.
+
+roles: [iran, foreign]
+category: emergency
+priority: 99
+required: false
+min_ironshield_version: "1.0.0"
+
+dependencies:
+  packages: []
+  ports:
+    - {port: 53, protocol: udp, description: "DNS port (foreign server only)"}
+
+auto_update:
+  enabled: true
+  source_type: github_release
+  repo: storm-dns/storm-dns
+
+benchmark:
+  use_standard: [latency, packet_loss, real_delay]
+
+health_check:
+  checks:
+    - {name: process, type: systemd, service: ironshield-storm-dns, interval_seconds: 60}
+    - {name: dns_resolution, type: command, command: "dig @127.0.0.1 test.storm", interval_seconds: 60}

@@ -1,0 +1,33 @@
+name: gost
+display_name: GOST
+version: "3.0.0"
+author: ginuerzh
+source: https://github.com/ginuerzh/gost
+license: MIT
+description: >
+  GO Simple Tunnel — a simple security tunnel written in Go.
+  Supports TCP forwarding with optional encryption.
+
+roles: [iran, foreign]
+category: tunnel_reliable
+priority: 3
+required: false
+min_ironshield_version: "1.0.0"
+
+dependencies:
+  packages: []
+  ports:
+    - {port: 8080, protocol: tcp, description: "GOST tunnel port"}
+
+auto_update:
+  enabled: true
+  source_type: github_release
+  repo: ginuerzh/gost
+
+benchmark:
+  use_standard: [latency, packet_loss, throughput, real_delay]
+
+health_check:
+  checks:
+    - {name: process, type: systemd, service: ironshield-gost, interval_seconds: 30}
+    - {name: port, type: port, port: 8080, protocol: tcp, interval_seconds: 30}

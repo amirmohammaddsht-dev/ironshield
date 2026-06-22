@@ -1,0 +1,38 @@
+name: phormal
+display_name: Phormal Tunnel
+version: "1.0.0"
+author: Schmi7zz
+source: https://github.com/Schmi7zz/Phormal
+license: GPL-3.0
+description: >
+  Fast and resilient tunneling layer for bridging two servers across hostile networks.
+  Bridge mode: SIT IPv6 private link (fastest, lowest overhead).
+  Relay mode: QUIC + Salamander obfuscation (best for filtered networks).
+
+roles: [iran, foreign]
+category: tunnel_fast
+priority: 1
+required: false
+min_ironshield_version: "1.0.0"
+
+modes:
+  - {name: bridge, description: "Stable path — SIT IPv6"}
+  - {name: relay, description: "Filtered/noisy path — QUIC + obfuscation"}
+
+dependencies:
+  packages: []
+  ports:
+    - {port: 8531, protocol: udp, description: "Phormal link port"}
+
+auto_update:
+  enabled: true
+  source_type: github_script
+  url: https://raw.githubusercontent.com/Schmi7zz/Phormal/main/phormal.sh
+
+benchmark:
+  use_standard: [latency, packet_loss, throughput, real_delay]
+
+health_check:
+  checks:
+    - {name: service, type: systemd, service: phormal, interval_seconds: 30}
+    - {name: tunnel_ping, type: ping, target: tunnel_peer_ip, count: 3, interval_seconds: 30}

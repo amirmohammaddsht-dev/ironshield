@@ -1,0 +1,34 @@
+name: frp
+display_name: FRP
+version: "0.61.0"
+author: fatedier
+source: https://github.com/fatedier/frp
+license: Apache-2.0
+description: >
+  Fast Reverse Proxy — expose local servers behind NAT or firewall.
+  Iran server runs frpc (client), Foreign server runs frps (server).
+
+roles: [iran, foreign]
+category: tunnel_reliable
+priority: 3
+required: false
+min_ironshield_version: "1.0.0"
+
+dependencies:
+  packages: []
+  ports:
+    - {port: 7000, protocol: tcp, description: "FRP server control port"}
+    - {port: 7001, protocol: tcp, description: "FRP proxy port"}
+
+auto_update:
+  enabled: true
+  source_type: github_release
+  repo: fatedier/frp
+
+benchmark:
+  use_standard: [latency, packet_loss, throughput, real_delay]
+
+health_check:
+  checks:
+    - {name: process, type: systemd, service: ironshield-frp, interval_seconds: 30}
+    - {name: port, type: port, port: 7000, protocol: tcp, interval_seconds: 30}

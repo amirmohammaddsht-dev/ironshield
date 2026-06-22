@@ -1,0 +1,41 @@
+name: openvpn
+display_name: OpenVPN
+version: "2.6.8"
+author: OpenVPN Inc.
+source: https://openvpn.net
+license: GPL-2.0
+description: >
+  OpenVPN server for user connections.
+  Runs on TCP port 443 (HTTPS-like) and TCP port 80 (HTTP-like)
+  to bypass DPI filtering in Iran.
+
+roles: [iran]
+category: vpn
+priority: 1
+required: true
+min_ironshield_version: "1.0.0"
+
+dependencies:
+  packages: [openvpn, easy-rsa, iptables]
+  ports:
+    - {port: 443, protocol: tcp, description: "OpenVPN primary port"}
+    - {port: 80, protocol: tcp, description: "OpenVPN fallback port"}
+
+auto_update:
+  enabled: true
+  source_type: apt
+  package: openvpn
+
+health_check:
+  checks:
+    - {name: process, type: systemd, service: openvpn@server, interval_seconds: 30}
+    - {name: port_443, type: port, port: 443, protocol: tcp, interval_seconds: 30}
+    - {name: port_80, type: port, port: 80, protocol: tcp, interval_seconds: 30}
+    - {name: tun_interface, type: command, command: "ip link show tun0", interval_seconds: 60}
+    - {name: user_traffic, type: traffic_monitor, interval_seconds: 300}
+
+monitoring:
+  metrics:
+    - {name: active_connections, type: log_parse, source: /opt/ironshield/logs/openvpn-status.log}
+    - {name: bytes_sent, type: log_parse, source: /opt/ironshield/logs/openvpn-status.log}
+    - {name: bytes_received, type: log_parse, source: /opt/ironshield/logs/openvpn-status.log}

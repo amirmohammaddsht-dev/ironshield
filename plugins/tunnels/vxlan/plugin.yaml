@@ -1,0 +1,31 @@
+name: vxlan
+display_name: VXLAN
+version: "kernel"
+author: Linux Kernel
+source: https://www.kernel.org
+license: GPL-2.0
+description: >
+  Virtual Extensible LAN — Layer 2 tunnel over UDP.
+  Built into Linux kernel, no binary required.
+
+roles: [iran, foreign]
+category: tunnel_reliable
+priority: 4
+required: false
+min_ironshield_version: "1.0.0"
+
+dependencies:
+  packages: [iproute2]
+  ports:
+    - {port: 4789, protocol: udp, description: "VXLAN standard port"}
+
+auto_update:
+  enabled: false
+
+benchmark:
+  use_standard: [latency, packet_loss, throughput, real_delay]
+
+health_check:
+  checks:
+    - {name: interface, type: command, command: "ip link show vxlan0", interval_seconds: 30}
+    - {name: service, type: systemd, service: ironshield-vxlan, interval_seconds: 30}

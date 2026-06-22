@@ -1,0 +1,33 @@
+name: backhaul
+display_name: Backhaul
+version: "1.9.0"
+author: Musixal
+source: https://github.com/Musixal/Backhaul
+license: MIT
+description: >
+  High-performance tunnel optimized for bypassing internet censorship in Iran.
+  Uses multiplexing for better performance.
+
+roles: [iran, foreign]
+category: tunnel_reliable
+priority: 2
+required: false
+min_ironshield_version: "1.0.0"
+
+dependencies:
+  packages: []
+  ports:
+    - {port: 3080, protocol: tcp, description: "Backhaul tunnel port"}
+
+auto_update:
+  enabled: true
+  source_type: github_release
+  repo: Musixal/Backhaul
+
+benchmark:
+  use_standard: [latency, packet_loss, throughput, real_delay]
+
+health_check:
+  checks:
+    - {name: process, type: systemd, service: ironshield-backhaul, interval_seconds: 30}
+    - {name: port, type: port, port: 3080, protocol: tcp, interval_seconds: 30}
