@@ -64,7 +64,7 @@ jobs:
           pip install black flake8
 
       - name: Black format check
-        run: black --check ironshield/
+        run: black --check .
 
       - name: Flake8 lint
         run: flake8 ironshield/ --max-line-length=100 --exclude=__pycache__

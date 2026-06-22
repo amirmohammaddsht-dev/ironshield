@@ -21,7 +21,6 @@ def db(tmp_path):
 
 
 class TestDatabase:
-
     def test_init_creates_tables(self, db):
         assert db.health_check() is True
 
@@ -41,12 +40,11 @@ class TestDatabase:
 
 
 class TestUserModel:
-
     def test_create_user(self, db):
         with db.session() as s:
             user = User(
                 username="testuser",
-                traffic_limit_bytes=50 * (1024 ** 3),
+                traffic_limit_bytes=50 * (1024**3),
                 expire_at=datetime.now(timezone.utc) + timedelta(days=30),
             )
             s.add(user)
@@ -57,8 +55,8 @@ class TestUserModel:
         with db.session() as s:
             user = User(
                 username="trafficuser",
-                traffic_limit_bytes=50 * (1024 ** 3),
-                traffic_used_bytes=10 * (1024 ** 3),
+                traffic_limit_bytes=50 * (1024**3),
+                traffic_used_bytes=10 * (1024**3),
             )
             s.add(user)
             s.flush()

@@ -4,15 +4,24 @@ Tests for IronShield utility modules.
 
 import pytest
 from ironshield.utils.validators import (
-    is_valid_ip, is_valid_port, is_valid_cidr,
-    is_valid_telegram_token, is_valid_domain,
-    is_valid_username, validate_traffic_gb, validate_days,
+    is_valid_ip,
+    is_valid_port,
+    is_valid_cidr,
+    is_valid_telegram_token,
+    is_valid_domain,
+    is_valid_username,
+    validate_traffic_gb,
+    validate_days,
 )
-from ironshield.utils.crypto import generate_token, generate_password, hash_password, verify_password
+from ironshield.utils.crypto import (
+    generate_token,
+    generate_password,
+    hash_password,
+    verify_password,
+)
 
 
 class TestValidators:
-
     def test_valid_ipv4(self):
         assert is_valid_ip("192.168.1.1") is True
 
@@ -72,7 +81,6 @@ class TestValidators:
 
 
 class TestCrypto:
-
     def test_generate_token(self):
         token = generate_token()
         assert len(token) == 64
