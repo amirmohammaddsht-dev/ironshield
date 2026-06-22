@@ -11,8 +11,15 @@ from datetime import datetime, timezone
 from typing import Optional, List
 
 from sqlalchemy import (
-    String, Integer, Float, Boolean, DateTime,
-    Text, BigInteger, ForeignKey, Enum as SAEnum,
+    String,
+    Integer,
+    Float,
+    Boolean,
+    DateTime,
+    Text,
+    BigInteger,
+    ForeignKey,
+    Enum as SAEnum,
     Index,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -30,6 +37,7 @@ def _new_uuid() -> str:
 
 class Base(DeclarativeBase):
     """Base class for all models."""
+
     pass
 
 
@@ -37,11 +45,13 @@ class Base(DeclarativeBase):
 # User Model
 # ─────────────────────────────────────────────
 
+
 class User(Base):
     """
     VPN user account.
     Each user gets an OpenVPN certificate and config file.
     """
+
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -50,7 +60,9 @@ class User(Base):
     # Identity
     username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     display_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True, nullable=True, index=True)
+    telegram_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, unique=True, nullable=True, index=True
+    )
 
     # Status
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -93,12 +105,12 @@ class User(Base):
         """Traffic limit in GB."""
         if self.traffic_limit_bytes is None:
             return None
-        return self.traffic_limit_bytes / (1024 ** 3)
+        return self.traffic_limit_bytes / (1024**3)
 
     @property
     def traffic_used_gb(self) -> float:
         """Traffic used in GB."""
-        return self.traffic_used_bytes / (1024 ** 3)
+        return self.traffic_used_bytes / (1024**3)
 
     @property
     def traffic_remaining_gb(self) -> Optional[float]:
@@ -106,7 +118,7 @@ class User(Base):
         if self.traffic_limit_bytes is None:
             return None
         remaining = self.traffic_limit_bytes - self.traffic_used_bytes
-        return max(0.0, remaining / (1024 ** 3))
+        return max(0.0, remaining / (1024**3))
 
     @property
     def traffic_percent_used(self) -> Optional[float]:
@@ -142,11 +154,13 @@ class User(Base):
 # VPN Config Model
 # ─────────────────────────────────────────────
 
+
 class VPNConfig(Base):
     """
     OpenVPN configuration file for a user.
     Stores the .ovpn file content (encrypted).
     """
+
     __tablename__ = "vpn_configs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -177,10 +191,12 @@ class VPNConfig(Base):
 # Tunnel Model
 # ─────────────────────────────────────────────
 
+
 class Tunnel(Base):
     """
     Tunnel plugin instance and its current state.
     """
+
     __tablename__ = "tunnels"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -197,8 +213,13 @@ class Tunnel(Base):
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     status: Mapped[str] = mapped_column(
         SAEnum(
-            "ACTIVE", "DEGRADED", "FAILED", "STANDBY",
-            "DISABLED", "ESTABLISHING", "UNKNOWN",
+            "ACTIVE",
+            "DEGRADED",
+            "FAILED",
+            "STANDBY",
+            "DISABLED",
+            "ESTABLISHING",
+            "UNKNOWN",
             name="tunnel_status_enum",
         ),
         default="UNKNOWN",
@@ -242,15 +263,15 @@ class Tunnel(Base):
 # Tunnel Metric Model (Time Series)
 # ─────────────────────────────────────────────
 
+
 class TunnelMetric(Base):
     """
     Historical benchmark data for a tunnel.
     Used for Pattern Analyzer and Smart Routing.
     """
+
     __tablename__ = "tunnel_metrics"
-    __table_args__ = (
-        Index("ix_tunnel_metrics_tunnel_ts", "tunnel_id", "recorded_at"),
-    )
+    __table_args__ = (Index("ix_tunnel_metrics_tunnel_ts", "tunnel_id", "recorded_at"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tunnel_id: Mapped[int] = mapped_column(Integer, ForeignKey("tunnels.id"), nullable=False)
@@ -291,15 +312,15 @@ class TunnelMetric(Base):
 # System Metric Model (Time Series)
 # ─────────────────────────────────────────────
 
+
 class SystemMetric(Base):
     """
     Server resource metrics (CPU, RAM, Disk, Network).
     Collected from both Iran and Foreign servers.
     """
+
     __tablename__ = "system_metrics"
-    __table_args__ = (
-        Index("ix_system_metrics_server_ts", "server", "recorded_at"),
-    )
+    __table_args__ = (Index("ix_system_metrics_server_ts", "server", "recorded_at"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
@@ -345,15 +366,15 @@ class SystemMetric(Base):
 # Traffic Log Model
 # ─────────────────────────────────────────────
 
+
 class TrafficLog(Base):
     """
     Per-user traffic consumption log.
     Updated periodically from OpenVPN status log.
     """
+
     __tablename__ = "traffic_logs"
-    __table_args__ = (
-        Index("ix_traffic_logs_user_ts", "user_id", "recorded_at"),
-    )
+    __table_args__ = (Index("ix_traffic_logs_user_ts", "user_id", "recorded_at"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
@@ -376,26 +397,33 @@ class TrafficLog(Base):
     user: Mapped["User"] = relationship("User", back_populates="traffic_logs")
 
     def __repr__(self) -> str:
-        return f"<TrafficLog user_id={self.user_id} sent={self.bytes_sent} recv={self.bytes_received}>"
+        return (
+            f"<TrafficLog user_id={self.user_id} sent={self.bytes_sent} recv={self.bytes_received}>"
+        )
 
 
 # ─────────────────────────────────────────────
 # Failover Event Model
 # ─────────────────────────────────────────────
 
+
 class FailoverEvent(Base):
     """
     Record of every failover action taken by the system.
     """
+
     __tablename__ = "failover_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     event_type: Mapped[str] = mapped_column(
         SAEnum(
-            "service_failed", "service_recovered",
-            "tunnel_failed", "tunnel_recovered",
-            "all_tunnels_failed", "emergency_activated",
+            "service_failed",
+            "service_recovered",
+            "tunnel_failed",
+            "tunnel_recovered",
+            "all_tunnels_failed",
+            "emergency_activated",
             "system_critical",
             name="failover_event_type_enum",
         ),
@@ -425,9 +453,7 @@ class FailoverEvent(Base):
     occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
-    resolved_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     @property
     def downtime_seconds(self) -> Optional[int]:
@@ -444,10 +470,12 @@ class FailoverEvent(Base):
 # Audit Log Model
 # ─────────────────────────────────────────────
 
+
 class AuditLog(Base):
     """
     Immutable audit trail for all important system actions.
     """
+
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -485,11 +513,13 @@ class AuditLog(Base):
 # Routing Decision Model
 # ─────────────────────────────────────────────
 
+
 class RoutingDecision(Base):
     """
     History of Smart Routing decisions.
     Used by Pattern Analyzer for learning.
     """
+
     __tablename__ = "routing_decisions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -500,9 +530,14 @@ class RoutingDecision(Base):
 
     reason: Mapped[str] = mapped_column(
         SAEnum(
-            "initial", "score_improved", "score_degraded",
-            "tunnel_failed", "manual_override", "emergency",
-            "recovery", "scheduled",
+            "initial",
+            "score_improved",
+            "score_degraded",
+            "tunnel_failed",
+            "manual_override",
+            "emergency",
+            "recovery",
+            "scheduled",
             name="routing_reason_enum",
         ),
         nullable=False,
@@ -528,11 +563,13 @@ class RoutingDecision(Base):
 # Settings Model
 # ─────────────────────────────────────────────
 
+
 class Setting(Base):
     """
     Key-value store for runtime settings.
     Overrides config file values at runtime.
     """
+
     __tablename__ = "settings"
 
     key: Mapped[str] = mapped_column(String(128), primary_key=True)

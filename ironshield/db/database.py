@@ -83,8 +83,18 @@ class Database:
         defaults = [
             ("routing.mode", "auto", "str", "Smart routing mode: auto/manual/emergency"),
             ("routing.cooldown_minutes", "10", "int", "Minimum minutes between tunnel switches"),
-            ("routing.min_score_diff", "10", "float", "Minimum score improvement to trigger switch"),
-            ("routing.consecutive_failures", "3", "int", "Failures before marking tunnel as failed"),
+            (
+                "routing.min_score_diff",
+                "10",
+                "float",
+                "Minimum score improvement to trigger switch",
+            ),
+            (
+                "routing.consecutive_failures",
+                "3",
+                "int",
+                "Failures before marking tunnel as failed",
+            ),
             ("benchmark.quick_interval_minutes", "5", "int", "Quick benchmark interval"),
             ("benchmark.standard_interval_minutes", "30", "int", "Standard benchmark interval"),
             ("benchmark.full_interval_hours", "6", "int", "Full benchmark interval"),

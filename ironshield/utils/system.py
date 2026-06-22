@@ -20,6 +20,7 @@ logger = get_logger("system")
 @dataclass
 class SystemInfo:
     """System resource information snapshot."""
+
     cpu_percent: float
     cpu_load_1m: float
     cpu_load_5m: float
@@ -110,6 +111,7 @@ def port_is_open(host: str, port: int, timeout: int = 3) -> bool:
         bool: True if port is open
     """
     import socket
+
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True
@@ -137,11 +139,11 @@ def get_system_info() -> SystemInfo:
         cpu_load_1m=load[0],
         cpu_load_5m=load[1],
         cpu_load_15m=load[2],
-        ram_total_gb=ram.total / (1024 ** 3),
-        ram_used_gb=ram.used / (1024 ** 3),
+        ram_total_gb=ram.total / (1024**3),
+        ram_used_gb=ram.used / (1024**3),
         ram_percent=ram.percent,
-        disk_total_gb=disk.total / (1024 ** 3),
-        disk_used_gb=disk.used / (1024 ** 3),
+        disk_total_gb=disk.total / (1024**3),
+        disk_used_gb=disk.used / (1024**3),
         disk_percent=disk.percent,
         net_bytes_sent=net.bytes_sent,
         net_bytes_recv=net.bytes_recv,
@@ -173,12 +175,12 @@ def get_ubuntu_version() -> Optional[str]:
 
 def get_available_ram_gb() -> float:
     """Get available RAM in GB."""
-    return psutil.virtual_memory().available / (1024 ** 3)
+    return psutil.virtual_memory().available / (1024**3)
 
 
 def get_available_disk_gb(path: str = "/") -> float:
     """Get available disk space in GB."""
-    return psutil.disk_usage(path).free / (1024 ** 3)
+    return psutil.disk_usage(path).free / (1024**3)
 
 
 def binary_exists(binary: str) -> bool:
@@ -201,9 +203,7 @@ def create_system_user(username: str) -> bool:
         logger.info(f"User {username} already exists")
         return True
 
-    code, _, err = run_command(
-        f"useradd -r -s /usr/sbin/nologin -d /opt/ironshield -m {username}"
-    )
+    code, _, err = run_command(f"useradd -r -s /usr/sbin/nologin -d /opt/ironshield -m {username}")
     if code != 0:
         logger.error(f"Failed to create user {username}: {err}")
         return False

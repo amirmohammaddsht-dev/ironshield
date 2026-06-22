@@ -5,11 +5,9 @@ Purpose: Network testing, latency measurement, and connectivity checks
 """
 
 import asyncio
-import subprocess
-import socket
 import time
-from typing import Optional, Dict, Any
-from dataclasses import dataclass, field
+from typing import Optional, Dict
+from dataclasses import dataclass
 
 from ironshield.utils.logger import get_logger
 from ironshield.utils.system import run_command
@@ -20,6 +18,7 @@ logger = get_logger("network")
 @dataclass
 class PingResult:
     """Result of a ping/latency test."""
+
     host: str
     success: bool
     min_ms: float = 0.0
@@ -32,12 +31,13 @@ class PingResult:
 @dataclass
 class RealDelayResult:
     """Result of an HTTP round-trip delay test."""
+
     host: str
     port: int
     success: bool
-    small_ms: float = 0.0    # 64-byte payload
-    medium_ms: float = 0.0   # 1KB payload
-    large_ms: float = 0.0    # 8KB payload
+    small_ms: float = 0.0  # 64-byte payload
+    medium_ms: float = 0.0  # 1KB payload
+    large_ms: float = 0.0  # 8KB payload
     avg_ms: float = 0.0
     error: Optional[str] = None
 
@@ -45,6 +45,7 @@ class RealDelayResult:
 @dataclass
 class ThroughputResult:
     """Result of an iperf3 throughput test."""
+
     host: str
     success: bool
     download_mbps: float = 0.0
@@ -155,7 +156,7 @@ def measure_packet_loss(host: str, cycles: int = 20) -> float:
         return 100.0
 
     # Parse mtr output — last hop is the destination
-    lines = [l for l in out.split("\n") if l.strip()]
+    lines = [line for line in out.split("\n") if line.strip()]
     if not lines:
         return 100.0
 
@@ -209,8 +210,7 @@ async def measure_real_delay(host: str, port: int = 8080) -> RealDelayResult:
                 results[size_name] = sum(delays) / len(delays)
             else:
                 return RealDelayResult(
-                    host=host, port=port, success=False,
-                    error=f"Failed to reach {host}:{port}"
+                    host=host, port=port, success=False, error=f"Failed to reach {host}:{port}"
                 )
 
     avg = sum(results.values()) / len(results) if results else 0.0
@@ -252,6 +252,7 @@ def measure_throughput(host: str, port: int = 5201, duration: int = 10) -> Throu
 
     try:
         import json
+
         data = json.loads(out)
         download_bps = data["end"]["sum_received"]["bits_per_second"]
         download_mbps = download_bps / 1_000_000
@@ -284,6 +285,7 @@ def measure_throughput(host: str, port: int = 5201, duration: int = 10) -> Throu
 def get_public_ip() -> Optional[str]:
     """Get the server's public IP address."""
     import httpx
+
     try:
         response = httpx.get("https://api.ipify.org", timeout=10)
         return response.text.strip()
@@ -296,4 +298,5 @@ def get_public_ip() -> Optional[str]:
 def _binary_available(binary: str) -> bool:
     """Check if a binary is available in PATH."""
     import shutil
+
     return shutil.which(binary) is not None
