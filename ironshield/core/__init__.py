@@ -1,1 +1,1 @@
-"""IronShield package."""
+"""IronShield core engines."""

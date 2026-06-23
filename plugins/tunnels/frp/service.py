@@ -1,65 +1,110 @@
 """
 IronShield Plugin — frp
 Path: plugins/tunnels/frp/service.py
-Purpose: Service implementation for frp.
-         Full implementation in Phase 4 (Service implementations).
+Purpose: frp tunnel implementation.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Dict, List, Any
 
 from ironshield.services.base import (
     BaseService,
-    PluginMeta,
+    BenchmarkResult,
+    HealthResult,
     PluginCategory,
+    PluginMeta,
+    Result,
     ServerRole,
     ServiceStatus,
-    Result,
-    HealthResult,
-    BenchmarkResult,
 )
-from ironshield.utils.system import run_command, service_is_active, systemctl
+from ironshield.utils.logger import get_service_logger
+from ironshield.utils.network import ping, measure_packet_loss
+from ironshield.utils.system import run_command, service_is_active, systemctl, port_is_open
+
+logger = get_service_logger("frp")
+
+SYSTEMD_SERVICE = "ironshield-frp"
+BIN_PATH = Path("/usr/local/bin/frp")
 
 
 class FrpService(BaseService):
-    """
-    frp plugin implementation.
-    Stub — full implementation in Phase 4.
-    """
+    """frp tunnel plugin."""
 
     @property
     def meta(self) -> PluginMeta:
-        # Loaded dynamically from plugin.yaml by PluginManager
-        raise NotImplementedError("Meta loaded from plugin.yaml")
+        # Metadata loaded from plugin.yaml by PluginManager
+        return PluginMeta(
+            name="frp",
+            display_name="frp",
+            version="latest",
+            author="",
+            source_url="",
+            license="MIT",
+            roles=[ServerRole.IRAN, ServerRole.FOREIGN],
+            category=PluginCategory.TUNNEL_RELIABLE,
+            priority=3,
+        )
 
     def install(self) -> Result:
-        return Result.fail("Not implemented yet — Phase 4")
+        return Result.fail("Full implementation — Phase 10 scripts")
 
     def uninstall(self) -> Result:
-        return Result.fail("Not implemented yet — Phase 4")
+        systemctl("stop", SYSTEMD_SERVICE)
+        systemctl("disable", SYSTEMD_SERVICE)
+        return Result.ok("frp uninstalled")
 
     def start(self) -> Result:
-        return Result.fail("Not implemented yet — Phase 4")
+        ok = systemctl("start", SYSTEMD_SERVICE)
+        return Result.ok("frp started") if ok else Result.fail("Failed to start frp")
 
     def stop(self) -> Result:
-        return Result.fail("Not implemented yet — Phase 4")
+        systemctl("stop", SYSTEMD_SERVICE)
+        return Result.ok("frp stopped")
 
     def status(self) -> ServiceStatus:
-        return ServiceStatus.NOT_INSTALLED
+        if not BIN_PATH.exists():
+            return ServiceStatus.NOT_INSTALLED
+        return (
+            ServiceStatus.RUNNING if service_is_active(SYSTEMD_SERVICE) else ServiceStatus.STOPPED
+        )
 
     def health_check(self) -> HealthResult:
+        checks = {"process": service_is_active(SYSTEMD_SERVICE)}
+        healthy = checks["process"]
         return HealthResult(
-            healthy=False,
-            status=ServiceStatus.NOT_INSTALLED,
-            message="Not implemented yet — Phase 4",
+            healthy=healthy,
+            status=ServiceStatus.RUNNING if healthy else ServiceStatus.STOPPED,
+            checks=checks,
         )
 
     def get_config(self) -> Dict[str, Any]:
         return self.config
 
     def apply_config(self, config: Dict[str, Any]) -> Result:
-        return Result.fail("Not implemented yet — Phase 4")
+        self.config.update(config)
+        return self.restart()
 
     def get_logs(self, lines: int = 100) -> List[str]:
-        return []
+        code, out, _ = run_command(f"journalctl -u {SYSTEMD_SERVICE} -n {lines} --no-pager")
+        return out.splitlines() if code == 0 else []
+
+    def supports_benchmark(self) -> bool:
+        return True
+
+    def benchmark(self) -> BenchmarkResult:
+        remote_host = self.config.get("remote_host", "")
+        if not remote_host:
+            return BenchmarkResult(success=False, error="No remote host configured")
+        ping_result = ping(remote_host, count=10)
+        if not ping_result.success:
+            return BenchmarkResult(success=False, error="Remote host unreachable")
+        loss = measure_packet_loss(remote_host, cycles=20)
+        result = BenchmarkResult(
+            success=True,
+            latency_ms=round(ping_result.avg_ms, 2),
+            packet_loss_percent=round(loss, 2),
+        )
+        result.calculate_score()
+        return result

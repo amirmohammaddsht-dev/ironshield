@@ -111,17 +111,14 @@ class BenchmarkResult:
         """
         Calculate composite score from benchmark results.
 
-        Score formula:
-            score = (latency_score * 0.25)
-                  + (real_delay_score * 0.30)
-                  + (packet_loss_score * 0.30)
-                  + (throughput_score * 0.15)
+        When real_delay_ms is available:
+            score = latency*0.25 + real_delay*0.30 + loss*0.30 + throughput*0.15
+
+        When real_delay_ms is None, weights are re-normalized across remaining metrics:
+            score = latency*(0.25/0.70) + loss*(0.30/0.70) + throughput*(0.15/0.70)
         """
         latency_score = self._score_latency(
             self.latency_ms if self.latency_ms is not None else 9999
-        )
-        delay_score = self._score_real_delay(
-            self.real_delay_ms if self.real_delay_ms is not None else 9999
         )
         loss_score = self._score_packet_loss(
             self.packet_loss_percent if self.packet_loss_percent is not None else 100
@@ -130,12 +127,22 @@ class BenchmarkResult:
             self.throughput_mbps if self.throughput_mbps is not None else 0
         )
 
-        score = (
-            latency_score * latency_weight
-            + delay_score * real_delay_weight
-            + loss_score * loss_weight
-            + throughput_score * throughput_weight
-        )
+        if self.real_delay_ms is not None:
+            delay_score = self._score_real_delay(self.real_delay_ms)
+            score = (
+                latency_score * latency_weight
+                + delay_score * real_delay_weight
+                + loss_score * loss_weight
+                + throughput_score * throughput_weight
+            )
+        else:
+            # Re-normalize weights to sum to 1.0 without real_delay
+            total = latency_weight + loss_weight + throughput_weight
+            score = (
+                latency_score * (latency_weight / total)
+                + loss_score * (loss_weight / total)
+                + throughput_score * (throughput_weight / total)
+            )
 
         self.score = round(score, 2)
         return self.score
