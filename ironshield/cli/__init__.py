@@ -1,1 +1,1 @@
-"""IronShield package."""
+"""IronShield CLI — command-line interface."""
