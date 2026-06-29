@@ -1,0 +1,32 @@
+[Unit]
+Description=IronShield Telegram Bot
+Documentation=https://github.com/amirmohammaddsht-dev/ironshield
+After=network.target ironshield-core.service
+Wants=ironshield-core.service
+
+[Service]
+Type=simple
+User=ironshield
+Group=ironshield
+WorkingDirectory=/opt/ironshield
+
+ExecStart=/opt/ironshield/venv/bin/python -m ironshield.bot.main
+Restart=always
+RestartSec=10
+StartLimitInterval=120
+StartLimitBurst=5
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/ironshield
+
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/opt/ironshield/configs/.env
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ironshield-bot
+
+[Install]
+WantedBy=multi-user.target

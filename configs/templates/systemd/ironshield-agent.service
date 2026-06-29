@@ -1,0 +1,32 @@
+[Unit]
+Description=IronShield Foreign Server Agent
+Documentation=https://github.com/amirmohammaddsht-dev/ironshield
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ironshield
+Group=ironshield
+WorkingDirectory=/opt/ironshield
+
+ExecStart=/opt/ironshield/venv/bin/python -m ironshield.agent.main
+Restart=always
+RestartSec=5
+StartLimitInterval=60
+StartLimitBurst=5
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/ironshield
+
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/opt/ironshield/configs/.env
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ironshield-agent
+
+[Install]
+WantedBy=multi-user.target
