@@ -9,6 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-20.04%20|%2022.04%20|%2024.04-orange.svg)](https://ubuntu.com)
+[![Latest Release](https://img.shields.io/badge/Latest%20Release-v1.0.0-brightgreen.svg)](https://github.com/amirmohammaddsht-dev/ironshield/releases)
 
 </div>
 

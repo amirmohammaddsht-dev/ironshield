@@ -1,0 +1,165 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  test_before_release:
+    name: Run Full Test Suite
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: |
+          pytest tests/ --asyncio-mode=auto -v
+
+      - name: Lint check
+        run: |
+          black --check --line-length=100 .
+          flake8 ironshield/ --max-line-length=100 --exclude=__pycache__
+
+  build_release:
+    name: Build Release Assets
+    runs-on: ubuntu-22.04
+    needs: test_before_release
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      - name: Verify version matches code
+        run: |
+          CODE_VERSION=$(python3 -c "import sys; sys.path.insert(0,'.'); from ironshield.version import __version__; print(__version__)")
+          TAG_VERSION="${{ steps.version.outputs.version }}"
+          if [[ "$CODE_VERSION" != "$TAG_VERSION" ]]; then
+            echo "::warning::Version mismatch — tag=$TAG_VERSION code=$CODE_VERSION"
+          fi
+
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/install.sh scripts/uninstall.sh scripts/update.sh
+          chmod +x scripts/utils/*.sh scripts/services/*.sh
+
+      - name: Compute checksums
+        run: |
+          mkdir -p dist
+          cp scripts/install.sh dist/install.sh
+          sha256sum dist/install.sh > dist/install.sh.sha256
+          cat dist/install.sh.sha256
+
+      - name: Generate changelog excerpt
+        id: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          {
+            echo "changelog<<EOF"
+            if [[ -n "$PREV_TAG" ]]; then
+              echo "## Changes since $PREV_TAG"
+              echo ""
+              git log "$PREV_TAG"..HEAD --pretty=format:"- %s (%h)" --no-merges
+            else
+              echo "## Initial Release"
+              echo ""
+              echo "First release of IronShield."
+            fi
+            echo ""
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: IronShield v${{ steps.version.outputs.version }}
+          body: |
+            # 🛡️ IronShield v${{ steps.version.outputs.version }}
+
+            ## Installation
+
+            **Iran Server:**
+            ```bash
+            curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | bash
+            ```
+
+            **Foreign Server:**
+            ```bash
+            curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | bash
+            ```
+
+            ${{ steps.changelog.outputs.changelog }}
+
+            ## Verify Download
+
+            ```bash
+            sha256sum -c install.sh.sha256
+            ```
+          files: |
+            dist/install.sh
+            dist/install.sh.sha256
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          generate_release_notes: true
+
+  update_readme:
+    name: Update Version Badge
+    runs-on: ubuntu-22.04
+    needs: build_release
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Update version badge in README
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if grep -q "Latest Release" README.md 2>/dev/null; then
+            sed -i "s/Latest%20Release-v[0-9.]*-/Latest%20Release-v${VERSION}-/" README.md
+          fi
+
+      - name: Commit version update
+        run: |
+          git config user.name "IronShield Release Bot"
+          git config user.email "release-bot@ironshield.dev"
+          if ! git diff --quiet README.md 2>/dev/null; then
+            git add README.md
+            git commit -m "chore: bump version badge to v${{ steps.version.outputs.version }}"
+            git push origin main
+          else
+            echo "No changes to commit"
+          fi
+        continue-on-error: true
