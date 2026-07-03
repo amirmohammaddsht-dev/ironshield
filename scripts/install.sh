@@ -12,6 +12,9 @@
 
 set -euo pipefail
 
+# Prevent any debconf prompt (e.g. iperf3's "start as daemon?" question)
+# from blocking unattended/piped installs.
+export DEBIAN_FRONTEND=noninteractive
 # ── Constants ─────────────────────────────────
 
 REPO_URL="https://github.com/amirmohammaddsht-dev/ironshield"
