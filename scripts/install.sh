@@ -240,7 +240,7 @@ install_base_packages() {
     log "Installing required system packages..."
     apt-get update -q >> "$LOG_FILE" 2>&1
     apt-get install -y -q \
-        curl wget git ufw iptables iptables-persistent \
+        curl wget git ufw iptables \
         net-tools iproute2 fping mtr iperf3 \
         build-essential libssl-dev libffi-dev \
         python3-pip python3-venv \
