@@ -280,8 +280,15 @@ init_ufw() {
 launch_installer() {
     log "Launching IronShield interactive installer..."
     echo ""
-    exec sudo -u "$SYSTEM_USER" \
-        -E "$INSTALL_DIR/venv/bin/python" \
+    # NOTE: unlike the systemd services (which correctly run as the
+    # unprivileged "$SYSTEM_USER" via User=ironshield), the interactive
+    # installer's own preflight check (ironshield/cli/installer.py ->
+    # is_root()) requires full root — it performs system-level setup
+    # (OpenVPN, broad firewall rules) beyond the scoped sudo rules
+    # granted to ironshield in setup_sudoers(). Run it as root; file
+    # ownership inside $INSTALL_DIR was already set to $SYSTEM_USER
+    # earlier and the installer should preserve that for files it writes.
+    exec "$INSTALL_DIR/venv/bin/python" \
         -m ironshield.cli.main install
 }
 
