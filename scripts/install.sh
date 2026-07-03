@@ -15,6 +15,7 @@ set -euo pipefail
 # Prevent any debconf prompt (e.g. iperf3's "start as daemon?" question)
 # from blocking unattended/piped installs.
 export DEBIAN_FRONTEND=noninteractive
+
 # ── Constants ─────────────────────────────────
 
 REPO_URL="https://github.com/amirmohammaddsht-dev/ironshield"
@@ -111,8 +112,8 @@ install_python() {
 
     # Install Python 3.11
     log "Installing Python 3.11..."
-    apt-get update -q >> "$LOG_FILE" 2>&1
-    apt-get install -y -q python3.11 python3.11-venv python3.11-dev python3-pip >> "$LOG_FILE" 2>&1
+    apt-get -o DPkg::Lock::Timeout=60 update -q >> "$LOG_FILE" 2>&1
+    apt-get -o DPkg::Lock::Timeout=60 install -y -q python3.11 python3.11-venv python3.11-dev python3-pip >> "$LOG_FILE" 2>&1
     PYTHON_BIN="python3.11"
     success "Python 3.11 installed"
 }
@@ -189,14 +190,24 @@ download_repo() {
 
     # Install git if needed
     if ! command -v git &>/dev/null; then
-        apt-get install -y -q git >> "$LOG_FILE" 2>&1
+        apt-get -o DPkg::Lock::Timeout=60 install -y -q git >> "$LOG_FILE" 2>&1
     fi
 
     if [[ -d "$INSTALL_DIR/.git" ]]; then
         log "Repository exists — pulling latest..."
         git -C "$INSTALL_DIR" pull origin main >> "$LOG_FILE" 2>&1
     else
-        git clone --depth=1 "$REPO_URL" "$INSTALL_DIR" >> "$LOG_FILE" 2>&1
+        # $INSTALL_DIR is never empty here: useradd -m already populated
+        # it with dotfiles from /etc/skel (and setup_directories may have
+        # added logs/db/keys). `git clone` refuses a non-empty target, so
+        # clone to a temp dir and merge its contents in instead.
+        local tmp_clone
+        tmp_clone=$(mktemp -d)
+        git clone --depth=1 "$REPO_URL" "$tmp_clone" >> "$LOG_FILE" 2>&1
+        shopt -s dotglob
+        cp -a "$tmp_clone"/. "$INSTALL_DIR"/
+        shopt -u dotglob
+        rm -rf "$tmp_clone"
     fi
 
     chown -R "$SYSTEM_USER:$SYSTEM_USER" "$INSTALL_DIR"
@@ -241,8 +252,8 @@ install_systemd_services() {
 
 install_base_packages() {
     log "Installing required system packages..."
-    apt-get update -q >> "$LOG_FILE" 2>&1
-    apt-get install -y -q \
+    apt-get -o DPkg::Lock::Timeout=60 update -q >> "$LOG_FILE" 2>&1
+    apt-get -o DPkg::Lock::Timeout=60 install -y -q \
         curl wget git ufw iptables \
         net-tools iproute2 fping mtr iperf3 \
         build-essential libssl-dev libffi-dev \
