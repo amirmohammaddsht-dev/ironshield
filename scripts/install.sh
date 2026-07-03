@@ -227,6 +227,7 @@ setup_venv() {
     log "Installing Python dependencies..."
     sudo -u "$SYSTEM_USER" bash -c "'$venv_dir/bin/pip' install --quiet --upgrade pip" >> "$LOG_FILE" 2>&1
     sudo -u "$SYSTEM_USER" bash -c "'$venv_dir/bin/pip' install --quiet -r '$INSTALL_DIR/requirements.txt'" >> "$LOG_FILE" 2>&1
+    sudo -u "$SYSTEM_USER" bash -c "'$venv_dir/bin/pip' install --quiet -e '$INSTALL_DIR'" >> "$LOG_FILE" 2>&1
 
     success "Python environment ready"
 }
