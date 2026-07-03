@@ -288,8 +288,12 @@ launch_installer() {
     # granted to ironshield in setup_sudoers(). Run it as root; file
     # ownership inside $INSTALL_DIR was already set to $SYSTEM_USER
     # earlier and the installer should preserve that for files it writes.
+    # When install.sh is run via `curl -sSL ... | bash`, stdin (fd 0) is
+    # the pipe from curl, not a real terminal — but the interactive CLI
+    # (questionary) needs a TTY for arrow-key prompts. Read directly from
+    # the controlling terminal instead.
     exec "$INSTALL_DIR/venv/bin/python" \
-        -m ironshield.cli.main install
+        -m ironshield.cli.main install < /dev/tty
 }
 
 # ── Main ──────────────────────────────────────
