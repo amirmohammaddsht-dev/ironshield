@@ -229,6 +229,11 @@ setup_venv() {
     sudo -u "$SYSTEM_USER" bash -c "'$venv_dir/bin/pip' install --quiet -r '$INSTALL_DIR/requirements.txt'" >> "$LOG_FILE" 2>&1
     sudo -u "$SYSTEM_USER" bash -c "'$venv_dir/bin/pip' install --quiet -e '$INSTALL_DIR'" >> "$LOG_FILE" 2>&1
 
+    # `pip install -e .` only creates the entry point inside the venv
+    # (venv/bin/ironshield), which is not on the system PATH. Symlink it
+    # into /usr/local/bin so `ironshield <command>` works globally.
+    ln -sf "$venv_dir/bin/ironshield" /usr/local/bin/ironshield
+
     success "Python environment ready"
 }
 
