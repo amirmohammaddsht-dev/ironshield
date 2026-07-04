@@ -285,15 +285,28 @@ launch_installer() {
     # installer's own preflight check (ironshield/cli/installer.py ->
     # is_root()) requires full root — it performs system-level setup
     # (OpenVPN, broad firewall rules) beyond the scoped sudo rules
-    # granted to ironshield in setup_sudoers(). Run it as root; file
-    # ownership inside $INSTALL_DIR was already set to $SYSTEM_USER
-    # earlier and the installer should preserve that for files it writes.
+    # granted to ironshield in setup_sudoers(). Run it as root.
+    #
     # When install.sh is run via `curl -sSL ... | bash`, stdin (fd 0) is
     # the pipe from curl, not a real terminal — but the interactive CLI
     # (questionary) needs a TTY for arrow-key prompts. Read directly from
-    # the controlling terminal instead.
-    exec "$INSTALL_DIR/venv/bin/python" \
+    # the controlling terminal instead, and fail clearly if none exists
+    # (e.g. running from a non-interactive panel/script).
+    if [[ ! -e /dev/tty ]]; then
+        die "This installer needs an interactive terminal. Run it directly over SSH, e.g.: curl -sSL <url> | bash"
+    fi
+
+    "$INSTALL_DIR/venv/bin/python" \
         -m ironshield.cli.main install < /dev/tty
+    local installer_status=$?
+
+    # The installer runs as root and writes config/key/backup files as it
+    # goes (e.g. ConfigEngine.save() has no chown of its own). Restore
+    # ownership to the unprivileged service user so the systemd services
+    # (User=ironshield) can read/write everything under $INSTALL_DIR.
+    chown -R "$SYSTEM_USER:$SYSTEM_USER" "$INSTALL_DIR"
+
+    exit "$installer_status"
 }
 
 # ── Main ──────────────────────────────────────
