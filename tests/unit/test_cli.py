@@ -237,6 +237,15 @@ class TestCLICommands:
             result = runner.invoke(cli, ["health"])
         assert result.exit_code != 0
 
+    def test_no_manage_command(self, runner):
+        """The install summary used to advertise 'ironshield manage' as an
+        interactive management menu, but no such command was ever
+        implemented. Guards against the summary text drifting out of sync
+        with the real command set again."""
+        assert "manage" not in cli.commands
+        result = runner.invoke(cli, ["manage"])
+        assert result.exit_code != 0
+
     def test_plugin_group_has_subcommands(self, runner):
         """plugin group should show subcommands."""
         result = runner.invoke(cli, ["plugin", "--help"])
@@ -390,6 +399,26 @@ class TestInstaller:
         ):
             result = installer._preflight_checks()
         assert result is True
+
+    def test_install_summary_does_not_reference_manage_command(self):
+        """The install summary used to hardcode 'ironshield manage' as a
+        useful command, but that command was never implemented."""
+        import inspect
+
+        from ironshield.cli import installer as installer_module
+
+        source = inspect.getsource(installer_module)
+        assert "ironshield manage" not in source
+
+    def test_phormal_marked_as_interactive_plugin(self):
+        """Phormal's upstream installer is menu-driven (asks for mode,
+        credentials, bandwidth via `read`). run_command() captures
+        stdout/stderr, which would hide those prompts from the user while
+        stdin still waits for an answer — an invisible deadlock until the
+        300s timeout. It must run with inherited stdio instead."""
+        from ironshield.cli.installer import Installer
+
+        assert "phormal" in Installer.INTERACTIVE_PLUGIN_SCRIPTS
 
     def test_write_config_creates_file(self, tmp_path):
         """_write_config should create config on disk."""
