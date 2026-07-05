@@ -420,6 +420,25 @@ class TestInstaller:
 
         assert "phormal" in Installer.INTERACTIVE_PLUGIN_SCRIPTS
 
+    def test_interactive_plugin_pauses_progress_bar(self):
+        """The Rich progress bar is a Live widget that repaints itself in
+        the background; if left running while an interactive plugin
+        script (e.g. phormal) writes its own menu to the same terminal,
+        the two redraws fight and the menu flickers in and out. The
+        installer must stop() the progress bar before handing the
+        terminal to such a script and start() it again afterward."""
+        import inspect
+
+        from ironshield.cli.installer import Installer
+
+        source = inspect.getsource(Installer._install_plugins)
+        stop_idx = source.find("progress.stop()")
+        start_idx = source.find("progress.start()")
+        subprocess_idx = source.find('subprocess.run(f"bash {script}"')
+        assert stop_idx != -1, "progress.stop() not found before interactive plugin run"
+        assert start_idx != -1, "progress.start() not found after interactive plugin run"
+        assert stop_idx < subprocess_idx < start_idx
+
     def test_write_config_creates_file(self, tmp_path):
         """_write_config should create config on disk."""
         from ironshield.cli.installer import Installer
