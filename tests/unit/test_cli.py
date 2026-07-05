@@ -439,6 +439,23 @@ class TestInstaller:
         assert start_idx != -1, "progress.start() not found after interactive plugin run"
         assert stop_idx < subprocess_idx < start_idx
 
+    def test_interactive_plugin_resets_terminal_mode(self):
+        """questionary/prompt_toolkit puts the terminal in raw mode for
+        earlier arrow-key prompts (language, tunnel selection). If that
+        isn't fully restored before an interactive plugin's own plain
+        `read` prompts run, `read` gets empty input in a tight loop
+        instead of blocking — the script's menu then redraws forever
+        without any real keystroke. `stty sane` must run first."""
+        import inspect
+
+        from ironshield.cli.installer import Installer
+
+        source = inspect.getsource(Installer._install_plugins)
+        assert '"stty", "sane"' in source
+        stty_idx = source.find('"stty", "sane"')
+        subprocess_idx = source.find('subprocess.run(f"bash {script}"')
+        assert stty_idx < subprocess_idx
+
     def test_write_config_creates_file(self, tmp_path):
         """_write_config should create config on disk."""
         from ironshield.cli.installer import Installer
