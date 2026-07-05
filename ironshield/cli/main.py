@@ -122,7 +122,9 @@ def status(as_json: bool):
     system = data.get("dashboard", {}).get("system", {})
     if system:
         console.print()
-        console.print(server_metrics_panel("🇮🇷 Iran Server", system))
+        server_role = data.get("dashboard", {}).get("server", "")
+        label = "🇮🇷 Iran Server" if server_role == "iran" else "🌍 Foreign Server"
+        console.print(server_metrics_panel(label, system))
 
 
 # ── Plugin Management ─────────────────────────
