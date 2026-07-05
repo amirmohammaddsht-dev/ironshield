@@ -98,6 +98,10 @@ if [[ "$PURGE" == true ]]; then
     rm -rf "$INSTALL_DIR"
     rm -f /etc/openvpn/server.conf /etc/openvpn/ca.crt \
           /etc/openvpn/server.crt /etc/openvpn/server.key /etc/openvpn/dh.pem
+    rm -f /usr/local/bin/gost /usr/local/bin/phormal \
+          /usr/local/bin/frps /usr/local/bin/frpc \
+          /usr/local/bin/backhaul /usr/local/bin/storm-dns \
+          /usr/local/bin/ironshield
     success "All data removed"
 else
     log "Keeping data directory: $INSTALL_DIR"
@@ -105,7 +109,8 @@ else
     rm -rf "$INSTALL_DIR/venv"
     rm -f /usr/local/bin/gost /usr/local/bin/phormal \
           /usr/local/bin/frps /usr/local/bin/frpc \
-          /usr/local/bin/backhaul
+          /usr/local/bin/backhaul /usr/local/bin/storm-dns \
+          /usr/local/bin/ironshield
     success "Binaries removed"
 fi
 
