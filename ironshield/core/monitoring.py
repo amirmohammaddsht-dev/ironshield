@@ -1,400 +1,695 @@
 """
-IronShield - Monitoring Engine
-Path: ironshield/core/monitoring.py
-Purpose: Collects system and service metrics from both Iran and Foreign servers.
-         Stores time-series data and generates reports for the Telegram bot.
+IronShield - CLI Main Entry Point
+Path: ironshield/cli/main.py
+Purpose: All CLI commands using Click.
+         Communicates with Core Engine via Unix Socket API.
 """
 
 from __future__ import annotations
 
 import asyncio
-import time
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+import sys
+from pathlib import Path
 
-from ironshield.core.plugin_manager import PluginManager
-from ironshield.db.database import Database
-from ironshield.db.models import SystemMetric, TrafficLog, User
-from ironshield.utils.logger import get_logger
-from ironshield.utils.system import get_system_info
+import click
 
-logger = get_logger("monitoring")
+from ironshield.cli.display import (
+    benchmark_results_table,
+    console,
+    plugin_status_table,
+    print_banner,
+    print_error,
+    print_info,
+    print_success,
+    print_warning,
+    routing_status_panel,
+    server_metrics_panel,
+    tunnel_score_table,
+    users_table,
+)
+from ironshield.version import __version__
+
+SOCKET_PATH = Path("/opt/ironshield/ironshield.sock")
 
 
-class MonitoringEngine:
-    """
-    Collects and stores metrics from both Iran and Foreign servers.
+def _get_client():
+    """Get a synchronous API client."""
+    from ironshield.api.client import SyncAPIClient
 
-    Responsibilities:
-    - Collect system metrics every 60 seconds
-    - Aggregate metrics into hourly/daily summaries
-    - Parse OpenVPN status log for user traffic
-    - Generate dashboard and report data for Telegram bot
-    - Purge old realtime metrics to save disk space
-    """
+    return SyncAPIClient(socket_path=SOCKET_PATH)
 
-    def __init__(
-        self,
-        plugin_manager: PluginManager,
-        db: Database,
-        server_label: str = "iran",
-        collect_interval: int = 60,
-    ):
-        self.pm = plugin_manager
-        self.db = db
-        self.server_label = server_label
-        self.collect_interval = collect_interval
-        self._running = False
-        self._last_aggregate = 0.0
-        self._aggregate_interval = 3600  # 1 hour
 
-    # ── Main Loop ─────────────────────────────
-
-    async def start(self) -> None:
-        """Start the async monitoring collection loop."""
-        self._running = True
-        logger.info(
-            f"Monitoring engine started "
-            f"(server={self.server_label}, interval={self.collect_interval}s)"
+def _require_running():
+    """Check that Core Engine is running, exit if not."""
+    if not SOCKET_PATH.exists():
+        print_error(
+            "IronShield Core is not running.\n"
+            "  Start it with: [cyan]systemctl start ironshield-core[/cyan]"
         )
+        sys.exit(1)
 
-        while self._running:
-            try:
-                await self._collect_cycle()
-            except Exception as e:
-                logger.error(f"Monitoring collection error: {e}")
-            await asyncio.sleep(self.collect_interval)
 
-    def stop(self) -> None:
-        """Stop the monitoring loop."""
-        self._running = False
-        logger.info("Monitoring engine stopped")
+# ── CLI Group ─────────────────────────────────
 
-    async def _collect_cycle(self) -> None:
-        """One full collection cycle: metrics + optional aggregation."""
-        await self._collect_system_metrics()
-        await self._collect_plugin_metrics()
-        await self._sync_user_traffic()
 
-        # Hourly aggregation
-        now = time.monotonic()
-        if now - self._last_aggregate >= self._aggregate_interval:
-            await self._aggregate_hourly()
-            await self._purge_old_realtime()
-            self._last_aggregate = now
+@click.group()
+@click.version_option(__version__, "--version", "-v", message="IronShield %(version)s")
+def cli():
+    """
+    🛡️  IronShield — VPN & Tunnel Management Platform
 
-    # ── System Metrics ────────────────────────
+    Manage your Iran/Foreign server VPN infrastructure from the command line.
+    """
+    pass
 
-    async def _collect_system_metrics(self) -> None:
-        """Collect CPU/RAM/Disk/Network metrics from the local server."""
-        loop = asyncio.get_event_loop()
-        info = await loop.run_in_executor(None, get_system_info)
 
+# ── Install ───────────────────────────────────
+
+
+@cli.command()
+def install():
+    """Run the interactive installation wizard."""
+    from ironshield.cli.installer import Installer
+
+    installer = Installer()
+    success = installer.run()
+    sys.exit(0 if success else 1)
+
+
+# ── Status ────────────────────────────────────
+
+
+@cli.command()
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def status(as_json: bool):
+    """Show status of all plugins and tunnels."""
+    _require_running()
+
+    client = _get_client()
+    try:
+        data = client.get_status()
+    except Exception as e:
+        print_error(f"Failed to get status: {e}")
+        sys.exit(1)
+
+    if as_json:
+        import json
+
+        click.echo(json.dumps(data, indent=2))
+        return
+
+    print_banner()
+
+    # Plugin status
+    plugins = data.get("dashboard", {}).get("plugins", [])
+    plugin_dict = {p["name"]: p for p in plugins} if isinstance(plugins, list) else plugins
+    if plugin_dict:
+        console.print(plugin_status_table(plugin_dict))
+        console.print()
+
+    # Tunnel status
+    tunnels = data.get("tunnels", {}).get("tunnels", [])
+    if tunnels:
+        console.print(tunnel_score_table(tunnels))
+        console.print()
+
+    # Routing
+    routing = data.get("routing", {})
+    if routing:
+        console.print(routing_status_panel(routing))
+
+    # System metrics
+    system = data.get("dashboard", {}).get("system", {})
+    if system:
+        console.print()
+        server_role = data.get("dashboard", {}).get("server", "")
+        label = "🇮🇷 Iran Server" if server_role == "iran" else "🌍 Foreign Server"
+        console.print(server_metrics_panel(label, system))
+
+
+# ── Plugin Management ─────────────────────────
+
+
+@cli.group()
+def plugin():
+    """Manage IronShield plugins."""
+    pass
+
+
+@plugin.command("list")
+def plugin_list():
+    """List all loaded plugins and their status."""
+    _require_running()
+    client = _get_client()
+    try:
+        data = client.list_plugins()
+        plugins = data.get("plugins", {})
+        console.print(plugin_status_table(plugins))
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+@plugin.command("start")
+@click.argument("name")
+def plugin_start(name: str):
+    """Start a plugin service."""
+    _require_running()
+    client = _get_client()
+    try:
+        result = client.start_plugin(name)
+        if result.get("success"):
+            print_success(f"{name} started")
+        else:
+            print_error(result.get("error", "Failed"))
+            sys.exit(1)
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+@plugin.command("stop")
+@click.argument("name")
+def plugin_stop(name: str):
+    """Stop a plugin service."""
+    _require_running()
+    client = _get_client()
+    try:
+        result = client.stop_plugin(name)
+        if result.get("success"):
+            print_success(f"{name} stopped")
+        else:
+            print_error(result.get("error", "Failed"))
+            sys.exit(1)
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+@plugin.command("restart")
+@click.argument("name")
+def plugin_restart(name: str):
+    """Restart a plugin service."""
+    _require_running()
+    client = _get_client()
+    try:
+        result = client.restart_plugin(name)
+        if result.get("success"):
+            print_success(f"{name} restarted")
+        else:
+            print_error(result.get("error", "Failed"))
+            sys.exit(1)
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+@plugin.command("update")
+@click.argument("name", required=False)
+@click.option("--all", "update_all", is_flag=True, help="Update all plugins")
+def plugin_update(name: str, update_all: bool):
+    """Update a plugin or all plugins."""
+    _require_running()
+    client = _get_client()
+
+    if update_all:
+        plugins_data = client.list_plugins()
+        names = list(plugins_data.get("plugins", {}).keys())
+    elif name:
+        names = [name]
+    else:
+        print_error("Specify a plugin name or use --all")
+        sys.exit(1)
+
+    for n in names:
         try:
-            with self.db.session() as s:
-                s.add(
-                    SystemMetric(
-                        server=self.server_label,
-                        resolution="realtime",
-                        cpu_percent=round(info.cpu_percent, 2),
-                        cpu_load_1m=round(info.cpu_load_1m, 2),
-                        cpu_load_5m=round(info.cpu_load_5m, 2),
-                        cpu_load_15m=round(info.cpu_load_15m, 2),
-                        ram_total_gb=round(info.ram_total_gb, 2),
-                        ram_used_gb=round(info.ram_used_gb, 2),
-                        ram_percent=round(info.ram_percent, 2),
-                        disk_total_gb=round(info.disk_total_gb, 2),
-                        disk_used_gb=round(info.disk_used_gb, 2),
-                        disk_percent=round(info.disk_percent, 2),
-                        net_bytes_sent=info.net_bytes_sent,
-                        net_bytes_recv=info.net_bytes_recv,
-                    )
-                )
+            result = client._call(f"POST /plugins/{n}/update")
+            if result.get("success"):
+                print_success(f"{n} updated")
+            else:
+                print_warning(f"{n}: {result.get('error', 'Failed')}")
         except Exception as e:
-            logger.warning(f"Failed to store system metric: {e}")
+            print_warning(f"{n}: {e}")
 
-    # ── Plugin Metrics ────────────────────────
 
-    async def _collect_plugin_metrics(self) -> None:
-        """Collect metrics from each loaded plugin."""
-        loop = asyncio.get_event_loop()
-        for plugin in self.pm.all():
-            try:
-                metrics = await loop.run_in_executor(None, plugin.get_metrics)
-                logger.debug(f"Plugin metrics [{plugin.meta.name}]: {metrics}")
-            except Exception as e:
-                logger.debug(f"Plugin metric collection failed [{plugin.meta.name}]: {e}")
+# ── Logs ──────────────────────────────────────
 
-    # ── User Traffic Sync ─────────────────────
 
-    async def _sync_user_traffic(self) -> None:
-        """
-        Parse OpenVPN status log and sync traffic to User records.
-        Updates both traffic_used_bytes and creates TrafficLog entries.
-        """
-        openvpn = self.pm.get("openvpn")
-        if openvpn is None or not openvpn.is_running():
+@cli.command()
+@click.argument("plugin_name")
+@click.option("--lines", "-n", default=50, help="Number of lines to show")
+def logs(plugin_name: str, lines: int):
+    """Show recent logs for a plugin."""
+    _require_running()
+    client = _get_client()
+    try:
+        data = client.get_plugin_logs(plugin_name, lines=lines)
+        log_lines = data.get("lines", [])
+        if not log_lines:
+            print_info(f"No logs available for {plugin_name}")
+            return
+        for line in log_lines:
+            console.print(f"[dim]{line}[/dim]")
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+# ── Tunnel Management ─────────────────────────
+
+
+@cli.group()
+def tunnel():
+    """Manage VPN tunnels."""
+    pass
+
+
+@tunnel.command("list")
+def tunnel_list():
+    """List all tunnels with scores."""
+    _require_running()
+    client = _get_client()
+    try:
+        data = client.get_ranked_tunnels()
+        tunnels = data.get("tunnels", [])
+        console.print(tunnel_score_table(tunnels))
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+@tunnel.command("switch")
+@click.argument("name")
+def tunnel_switch(name: str):
+    """Manually switch to a specific tunnel."""
+    _require_running()
+    client = _get_client()
+    try:
+        result = client.switch_tunnel(name)
+        if result.get("success"):
+            print_success(f"Switched to tunnel: {name}")
+        else:
+            print_error(result.get("message", "Failed"))
+            sys.exit(1)
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+@tunnel.command("auto")
+def tunnel_auto():
+    """Restore automatic tunnel selection."""
+    _require_running()
+    client = _get_client()
+    try:
+        client.clear_tunnel_override()
+        print_success("Auto-routing restored")
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+# ── Benchmark ─────────────────────────────────
+
+
+@cli.command()
+@click.option(
+    "--full", is_flag=True, help="Run full benchmark (latency + loss + throughput + real delay)"
+)
+@click.option("--tunnel", "tunnel_name", default=None, help="Benchmark a specific tunnel")
+def benchmark(full: bool, tunnel_name: str):
+    """Run benchmark tests on all tunnels."""
+    _require_running()
+    client = _get_client()
+
+    print_info("Running benchmark... this may take a minute")
+    try:
+        if tunnel_name:
+            data = asyncio.run(
+                __import__("ironshield.api.client", fromlist=["APIClient"])
+                .APIClient(socket_path=SOCKET_PATH)
+                .request(f"POST /benchmark/{tunnel_name}")
+            )
+            results = {tunnel_name: data} if data else {}
+        else:
+            data = client.run_benchmark(quick=not full)
+            results = data.get("results", {})
+
+        if results:
+            console.print(benchmark_results_table(results))
+        else:
+            print_warning("No benchmark results available")
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+# ── User Management ───────────────────────────
+
+
+@cli.group()
+def user():
+    """Manage VPN users."""
+    pass
+
+
+@user.command("list")
+def user_list():
+    """List all VPN users."""
+    _require_running()
+    client = _get_client()
+    try:
+        data = client.list_users()
+        users = data.get("users", [])
+        if not users:
+            print_info("No users found")
+            return
+        console.print(users_table(users))
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+@user.command("add")
+@click.argument("username")
+@click.option(
+    "--traffic", "-t", default=None, type=float, help="Traffic limit in GB (default: unlimited)"
+)
+@click.option("--days", "-d", default=30, type=int, help="Subscription days (default: 30)")
+def user_add(username: str, traffic: float, days: int):
+    """Add a new VPN user."""
+    _require_running()
+    client = _get_client()
+    try:
+        result = client.create_user(
+            username=username,
+            traffic_limit_gb=traffic,
+            expire_days=days,
+        )
+        if result.get("error"):
+            print_error(result["error"])
+            sys.exit(1)
+
+        print_success(f"User '{username}' created")
+        print_info(f"Expires in: {days} days")
+        if traffic:
+            print_info(f"Traffic limit: {traffic} GB")
+        else:
+            print_info("Traffic limit: Unlimited")
+
+        # Show .ovpn content hint
+        if result.get("ovpn_content"):
+            ovpn_path = Path(f"/opt/ironshield/configs/openvpn/clients/{username}.ovpn")
+            print_info(f"Config file: {ovpn_path}")
+
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+@user.command("delete")
+@click.argument("username")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+def user_delete(username: str, yes: bool):
+    """Delete a VPN user."""
+    _require_running()
+
+    if not yes:
+        click.confirm(f"Delete user '{username}'?", abort=True)
+
+    client = _get_client()
+    try:
+        result = client.delete_user(username)
+        if result.get("success"):
+            print_success(f"User '{username}' deleted")
+        else:
+            print_error(result.get("error", "Failed"))
+            sys.exit(1)
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+@user.command("info")
+@click.argument("username")
+def user_info(username: str):
+    """Show detailed info for a VPN user."""
+    _require_running()
+    client = _get_client()
+    try:
+        data = client._call(f"GET /users/{username}")
+        if data.get("error"):
+            print_error(data["error"])
+            sys.exit(1)
+
+        from rich.table import Table
+        from rich import box as rich_box
+
+        table = Table(box=rich_box.SIMPLE, show_header=False)
+        table.add_column("Field", style="bold cyan", width=20)
+        table.add_column("Value")
+
+        used = data.get("traffic_used_gb", 0) or 0
+        limit = data.get("traffic_limit_gb")
+        remaining = data.get("traffic_remaining_gb")
+
+        table.add_row("Username", data.get("username", ""))
+        table.add_row("Status", "✅ Active" if data.get("is_active") else "❌ Inactive")
+        table.add_row("Traffic Used", f"{used:.2f} GB")
+        table.add_row("Traffic Limit", f"{limit:.0f} GB" if limit else "Unlimited")
+        table.add_row("Remaining", f"{remaining:.2f} GB" if remaining is not None else "Unlimited")
+        table.add_row("Days Until Expiry", str(data.get("days_until_expiry", "∞")))
+        table.add_row("Expired", "Yes" if data.get("is_expired") else "No")
+        table.add_row("Over Quota", "Yes" if data.get("is_over_quota") else "No")
+        table.add_row("Last Connected", data.get("last_connected_at") or "Never")
+        table.add_row("Created", data.get("created_at", "")[:10])
+
+        console.print(table)
+
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+@user.command("toggle")
+@click.argument("username")
+def user_toggle(username: str):
+    """Enable or disable a VPN user."""
+    _require_running()
+    client = _get_client()
+    try:
+        result = client.toggle_user(username)
+        state = "enabled" if result.get("is_active") else "disabled"
+        print_success(f"User '{username}' {state}")
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+@user.command("config")
+@click.argument("username")
+@click.option("--output", "-o", default=None, help="Output file path")
+def user_config(username: str, output: str):
+    """Download .ovpn config for a user."""
+    _require_running()
+    client = _get_client()
+    try:
+        data = client.get_user_config(username)
+        if data.get("error"):
+            print_error(data["error"])
+            sys.exit(1)
+
+        content = data.get("ovpn_content", "")
+        out_path = output or f"{username}.ovpn"
+        Path(out_path).write_text(content)
+        print_success(f"Config saved to: {out_path}")
+
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+# ── Routing ───────────────────────────────────
+
+
+@cli.group()
+def routing():
+    """Manage Smart Routing Engine."""
+    pass
+
+
+@routing.command("status")
+def routing_status():
+    """Show current routing status."""
+    _require_running()
+    client = _get_client()
+    try:
+        data = client.get_routing_status()
+        console.print(routing_status_panel(data))
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+@routing.command("history")
+@click.option("--limit", "-n", default=10, help="Number of decisions to show")
+def routing_history(limit: int):
+    """Show recent routing decisions."""
+    _require_running()
+    client = _get_client()
+    try:
+        data = client.get_routing_history()
+        decisions = data.get("decisions", [])[:limit]
+
+        if not decisions:
+            print_info("No routing decisions recorded yet")
             return
 
+        from rich.table import Table
+        from rich import box as rich_box
+
+        table = Table(title="Routing History", box=rich_box.ROUNDED, header_style="bold cyan")
+        table.add_column("Time", width=20)
+        table.add_column("From", width=16)
+        table.add_column("To", width=16, style="bold green")
+        table.add_column("Reason", width=16)
+        table.add_column("Score Δ", width=10, justify="right")
+
+        for d in decisions:
+            from_score = d.get("from_score")
+            to_score = d.get("to_score")
+            delta = ""
+            if from_score is not None and to_score is not None:
+                diff = to_score - from_score
+                color = "green" if diff > 0 else "red"
+                delta = f"[{color}]{diff:+.0f}[/{color}]"
+
+            table.add_row(
+                (d.get("at") or "")[:16].replace("T", " "),
+                d.get("from") or "—",
+                d.get("to") or "",
+                d.get("reason") or "",
+                delta,
+            )
+
+        console.print(table)
+
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+# ── Metrics ───────────────────────────────────
+
+
+@cli.command()
+def metrics():
+    """Show system resource metrics."""
+    _require_running()
+    client = _get_client()
+    try:
+        data = client.get_metrics()
+        system = data.get("system", {})
+        console.print(server_metrics_panel("🖥️  System Metrics", system))
+
+        # User stats
+        users = data.get("users", {})
+        if users:
+            console.print()
+            console.print(
+                f"[bold]👥 Users:[/bold] "
+                f"{users.get('active', 0)} active / "
+                f"{users.get('total', 0)} total / "
+                f"{users.get('expired', 0)} expired"
+            )
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+# ── Config ────────────────────────────────────
+
+
+@cli.group()
+def config():
+    """Manage IronShield configuration."""
+    pass
+
+
+@config.command("show")
+def config_show():
+    """Show current configuration."""
+    _require_running()
+    client = _get_client()
+    try:
+        import json
+
+        data = client.get_config()
+        console.print_json(json.dumps(data, indent=2))
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+@config.command("set")
+@click.argument("key")
+@click.argument("value")
+def config_set(key: str, value: str):
+    """Set a configuration value (dot notation)."""
+    _require_running()
+    client = _get_client()
+    try:
+        # Try to cast to appropriate type
         try:
-            loop = asyncio.get_event_loop()
-            connections = await loop.run_in_executor(None, openvpn.get_active_connections)
-
-            with self.db.session() as s:
-                for conn in connections:
-                    username = conn.get("username", "")
-                    if not username:
-                        continue
-
-                    user = s.query(User).filter_by(username=username).first()
-                    if user is None:
-                        continue
-
-                    bytes_recv = conn.get("bytes_recv", 0)
-                    bytes_sent = conn.get("bytes_sent", 0)
-                    total = bytes_recv + bytes_sent
-
-                    # Update cumulative traffic
-                    user.traffic_used_bytes = max(user.traffic_used_bytes, total)
-                    user.last_connected_at = datetime.now(timezone.utc)
-
-                    # Log entry
-                    s.add(
-                        TrafficLog(
-                            user_id=user.id,
-                            bytes_sent=bytes_sent,
-                            bytes_received=bytes_recv,
-                            client_ip=conn.get("real_ip", ""),
-                        )
-                    )
-
-        except Exception as e:
-            logger.warning(f"User traffic sync failed: {e}")
-
-    # ── Aggregation ───────────────────────────
-
-    async def _aggregate_hourly(self) -> None:
-        """
-        Aggregate last hour's realtime metrics into a single hourly record.
-        This keeps the DB compact over time.
-        """
-        one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
-
-        try:
-            with self.db.session() as s:
-                metrics = (
-                    s.query(SystemMetric)
-                    .filter(
-                        SystemMetric.server == self.server_label,
-                        SystemMetric.resolution == "realtime",
-                        SystemMetric.recorded_at >= one_hour_ago,
-                    )
-                    .all()
-                )
-
-                if not metrics:
-                    return
-
-                def avg(values):
-                    vals = [v for v in values if v is not None]
-                    return round(sum(vals) / len(vals), 2) if vals else None
-
-                s.add(
-                    SystemMetric(
-                        server=self.server_label,
-                        resolution="hourly",
-                        cpu_percent=avg([m.cpu_percent for m in metrics]),
-                        cpu_load_1m=avg([m.cpu_load_1m for m in metrics]),
-                        cpu_load_5m=avg([m.cpu_load_5m for m in metrics]),
-                        cpu_load_15m=avg([m.cpu_load_15m for m in metrics]),
-                        ram_percent=avg([m.ram_percent for m in metrics]),
-                        ram_used_gb=avg([m.ram_used_gb for m in metrics]),
-                        ram_total_gb=metrics[0].ram_total_gb,
-                        disk_percent=avg([m.disk_percent for m in metrics]),
-                        disk_used_gb=avg([m.disk_used_gb for m in metrics]),
-                        disk_total_gb=metrics[0].disk_total_gb,
-                    )
-                )
-
-            logger.debug("Hourly metric aggregation complete")
-
-        except Exception as e:
-            logger.warning(f"Hourly aggregation failed: {e}")
-
-    async def _purge_old_realtime(self) -> None:
-        """Remove realtime metrics older than 24 hours to save space."""
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-        try:
-            with self.db.session() as s:
-                deleted = (
-                    s.query(SystemMetric)
-                    .filter(
-                        SystemMetric.resolution == "realtime",
-                        SystemMetric.recorded_at < cutoff,
-                    )
-                    .delete()
-                )
-                if deleted:
-                    logger.info(f"Purged {deleted} old realtime metrics")
-        except Exception as e:
-            logger.warning(f"Metric purge failed: {e}")
-
-    # ── Dashboard Data ────────────────────────
-
-    def get_dashboard_data(self) -> Dict[str, Any]:
-        """
-        Return a complete dashboard snapshot for the Telegram bot.
-        Combines system metrics, tunnel status, and user counts.
-        """
-        system = self._get_latest_system_metrics()
-        user_stats = self._get_user_stats()
-        plugin_status = self._get_plugin_status_summary()
-
-        return {
-            "server": self.server_label,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "system": system,
-            "plugins": plugin_status,
-            "users": user_stats,
-        }
-
-    def _get_latest_system_metrics(self) -> Optional[Dict]:
-        """Get most recent system metrics from DB."""
-        try:
-            with self.db.session() as s:
-                m = (
-                    s.query(SystemMetric)
-                    .filter_by(server=self.server_label)
-                    .order_by(SystemMetric.recorded_at.desc())
-                    .first()
-                )
-                if m:
-                    return {
-                        "cpu_percent": m.cpu_percent,
-                        "ram_percent": m.ram_percent,
-                        "ram_used_gb": m.ram_used_gb,
-                        "ram_total_gb": m.ram_total_gb,
-                        "disk_percent": m.disk_percent,
-                        "disk_used_gb": m.disk_used_gb,
-                        "disk_total_gb": m.disk_total_gb,
-                        "net_bytes_sent": m.net_bytes_sent,
-                        "net_bytes_recv": m.net_bytes_recv,
-                        "recorded_at": m.recorded_at.isoformat(),
-                    }
-        except Exception:
-            pass
-        return None
-
-    def _get_user_stats(self) -> Dict[str, Any]:
-        """Return user statistics from DB."""
-        now = datetime.now(timezone.utc)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-        try:
-            with self.db.session() as s:
-                total = s.query(User).count()
-                active = s.query(User).filter_by(is_active=True).count()
-                expired = s.query(User).filter(User.expire_at < now).count()
-                active_today = s.query(User).filter(User.last_connected_at >= today_start).count()
-                return {
-                    "total": total,
-                    "active": active,
-                    "expired": expired,
-                    "active_today": active_today,
-                }
-        except Exception as e:
-            logger.warning(f"User stats query failed: {e}")
-            return {"total": 0, "active": 0, "expired": 0, "active_today": 0}
-
-    def _get_plugin_status_summary(self) -> List[Dict]:
-        """Return plugin status list."""
-        result = []
-        for plugin in self.pm.all():
+            parsed = int(value)
+        except ValueError:
             try:
-                result.append(
-                    {
-                        "name": plugin.meta.name,
-                        "display_name": plugin.meta.display_name,
-                        "status": plugin.status().value,
-                        "version": plugin.meta.version,
-                    }
-                )
-            except Exception:
-                result.append(
-                    {
-                        "name": plugin.meta.name,
-                        "status": "ERROR",
-                    }
-                )
-        return result
+                parsed = float(value)
+            except ValueError:
+                if value.lower() in ("true", "false"):
+                    parsed = value.lower() == "true"
+                else:
+                    parsed = value
 
-    # ── Reports ───────────────────────────────
+        result = client.update_config({key: parsed})
+        if result.get("success"):
+            print_success(f"Set {key} = {parsed}")
+        else:
+            print_error(f"Failed: {result.get('errors', 'Unknown error')}")
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
 
-    def generate_daily_report(self) -> Dict[str, Any]:
-        """
-        Generate a daily summary report.
-        Called at 08:00 daily and sent to Telegram bot.
-        """
-        yesterday = datetime.now(timezone.utc) - timedelta(days=1)
 
-        try:
-            with self.db.session() as s:
-                metrics = (
-                    s.query(SystemMetric)
-                    .filter(
-                        SystemMetric.server == self.server_label,
-                        SystemMetric.resolution == "hourly",
-                        SystemMetric.recorded_at >= yesterday,
-                    )
-                    .all()
-                )
+# ── Health Check ──────────────────────────────
 
-                def avg(values):
-                    vals = [v for v in values if v is not None]
-                    return round(sum(vals) / len(vals), 1) if vals else 0
 
-                return {
-                    "date": yesterday.strftime("%Y-%m-%d"),
-                    "server": self.server_label,
-                    "avg_cpu": avg([m.cpu_percent for m in metrics]),
-                    "max_cpu": max((m.cpu_percent or 0) for m in metrics) if metrics else 0,
-                    "avg_ram": avg([m.ram_percent for m in metrics]),
-                    "avg_disk": avg([m.disk_percent for m in metrics]),
-                    "metric_count": len(metrics),
-                    "users": self._get_user_stats(),
-                }
-        except Exception as e:
-            logger.warning(f"Daily report generation failed: {e}")
-            return {"error": str(e)}
+@cli.command()
+def health():
+    """Quick health check of the Core Engine."""
+    if not SOCKET_PATH.exists():
+        print_error("Core Engine is not running")
+        sys.exit(1)
 
-    def generate_weekly_report(self) -> Dict[str, Any]:
-        """Generate a weekly summary report."""
-        week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    client = _get_client()
+    try:
+        data = client.get_health()
+        if data.get("status") == "ok":
+            print_success(f"Core Engine is healthy (v{data.get('version', '?')})")
+        else:
+            print_warning("Core Engine returned unexpected status")
+    except Exception as e:
+        print_error(f"Health check failed: {e}")
+        sys.exit(1)
 
-        try:
-            with self.db.session() as s:
-                metrics = (
-                    s.query(SystemMetric)
-                    .filter(
-                        SystemMetric.server == self.server_label,
-                        SystemMetric.resolution.in_(["hourly", "daily"]),
-                        SystemMetric.recorded_at >= week_ago,
-                    )
-                    .all()
-                )
 
-                def avg(values):
-                    vals = [v for v in values if v is not None]
-                    return round(sum(vals) / len(vals), 1) if vals else 0
+# ── Entry Point ───────────────────────────────
 
-                return {
-                    "period": "7 days",
-                    "server": self.server_label,
-                    "avg_cpu": avg([m.cpu_percent for m in metrics]),
-                    "avg_ram": avg([m.ram_percent for m in metrics]),
-                    "avg_disk": avg([m.disk_percent for m in metrics]),
-                    "users": self._get_user_stats(),
-                }
-        except Exception as e:
-            logger.warning(f"Weekly report generation failed: {e}")
-            return {"error": str(e)}
+
+def main():
+    """CLI entry point registered in pyproject.toml."""
+    cli()
+
+
+if __name__ == "__main__":
+    main()
