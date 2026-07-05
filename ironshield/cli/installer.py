@@ -416,6 +416,21 @@ class Installer:
                         # Pause the live display while it has control.
                         progress.stop()
                         try:
+                            # questionary/prompt_toolkit puts the terminal
+                            # into raw mode for its own arrow-key prompts
+                            # earlier in this flow (language, tunnel
+                            # selection, etc). If that state isn't fully
+                            # restored to canonical/cooked mode by the time
+                            # this script's own plain `read` prompts run,
+                            # `read` gets empty input instead of blocking,
+                            # so the script's menu loops and redraws
+                            # forever without waiting for real keystrokes.
+                            # Force a known-good terminal state first.
+                            try:
+                                with open("/dev/tty") as tty:
+                                    subprocess.run(["stty", "sane"], stdin=tty, check=False)
+                            except OSError:
+                                pass
                             result = subprocess.run(f"bash {script}", shell=True)
                         finally:
                             progress.start()
