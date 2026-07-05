@@ -177,6 +177,49 @@ class TestInstallScript:
     def test_calls_main_function(self, content):
         assert 'main "$@"' in content
 
+    # ── Regression tests for fixes found during real-server installs ──
+
+    def test_no_iptables_persistent(self, content):
+        """iptables-persistent has a Breaks: relationship with ufw on
+        Ubuntu 24.04 and is unused anywhere else in the project."""
+        assert "iptables-persistent" not in content
+
+    def test_apt_is_noninteractive(self, content):
+        """Without this, debconf prompts (e.g. iperf3's daemon question)
+        hang unattended/piped installs indefinitely."""
+        assert "DEBIAN_FRONTEND=noninteractive" in content
+
+    def test_apt_waits_for_dpkg_lock(self, content):
+        """Avoids failing immediately if apt-daily/unattended-upgrades
+        holds the dpkg/debconf lock on a freshly booted VM."""
+        assert "DPkg::Lock::Timeout" in content
+
+    def test_does_not_clone_directly_into_install_dir(self, content):
+        """INSTALL_DIR is never empty (useradd -m populates it with
+        /etc/skel dotfiles), so `git clone` must not target it directly."""
+        assert 'git clone --depth=1 "$REPO_URL" "$INSTALL_DIR"' not in content
+        assert "mktemp -d" in content
+
+    def test_installs_ironshield_package_editable(self, content):
+        """requirements.txt alone does not install the ironshield package
+        itself, which is why `ironshield.cli.main` used to be unimportable."""
+        assert "pip' install --quiet -e" in content
+
+    def test_symlinks_cli_entrypoint_to_path(self, content):
+        """`pip install -e .` only creates venv/bin/ironshield, which is
+        not on the system PATH."""
+        assert "/usr/local/bin/ironshield" in content
+
+    def test_launch_installer_checks_for_tty(self, content):
+        """The interactive installer needs a real terminal; curl | bash
+        pipes stdin from curl instead."""
+        assert "/dev/tty" in content
+
+    def test_launch_installer_restores_ownership_after_root_run(self, content):
+        """The installer runs as root and writes config/key files; the
+        systemd services run as the unprivileged ironshield user."""
+        assert 'chown -R "$SYSTEM_USER:$SYSTEM_USER" "$INSTALL_DIR"' in content
+
 
 # ── Uninstall Script Content Tests ──────────────
 
@@ -273,6 +316,28 @@ class TestPluginInstallScripts:
     def test_phormal_downloads_from_github(self):
         content = (SCRIPTS_ROOT / "services" / "install_phormal.sh").read_text()
         assert "Schmi7zz/Phormal" in content
+
+    def test_phormal_strips_crlf_before_bash(self):
+        """Upstream Schmi7zz/Phormal script is stored with CRLF line
+        endings, which breaks bash parsing (`$'\\r': command not found`)
+        when piped directly to bash."""
+        content = (SCRIPTS_ROOT / "services" / "install_phormal.sh").read_text()
+        assert "tr -d '\\r'" in content
+
+    def test_openvpn_waits_for_dpkg_lock(self):
+        content = (SCRIPTS_ROOT / "services" / "install_openvpn.sh").read_text()
+        assert "DPkg::Lock::Timeout" in content
+
+    def test_vxlan_waits_for_dpkg_lock(self):
+        content = (SCRIPTS_ROOT / "services" / "install_vxlan.sh").read_text()
+        assert "DPkg::Lock::Timeout" in content
+
+    def test_storm_dns_uses_correct_repo(self):
+        """storm-dns/storm-dns does not exist on GitHub (404); the real
+        upstream project is nullroute1970/StormDNS."""
+        content = (SCRIPTS_ROOT / "services" / "install_storm_dns.sh").read_text()
+        assert 'REPO="nullroute1970/StormDNS"' in content
+        assert 'REPO="storm-dns/storm-dns"' not in content
 
     def test_gost_detects_architecture(self):
         content = (SCRIPTS_ROOT / "services" / "install_gost.sh").read_text()
