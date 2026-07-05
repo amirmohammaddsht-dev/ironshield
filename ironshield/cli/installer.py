@@ -8,6 +8,7 @@ Purpose: Interactive installation wizard. Collects server configuration,
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import Dict, List
 
@@ -377,6 +378,15 @@ class Installer:
 
     # ── Step 6: Plugin Installation ───────────
 
+    # Upstream installer scripts for these plugins are themselves
+    # menu-driven (they prompt for mode/credentials/bandwidth etc. via
+    # `read`) and cannot be automated. run_command() captures
+    # stdout/stderr for its timeout+error-message handling, which would
+    # hide those prompts from the user while stdin still waits for an
+    # answer — an invisible deadlock until the timeout fires. Run these
+    # with inherited stdio instead so the user can see and answer them.
+    INTERACTIVE_PLUGIN_SCRIPTS = {"phormal"}
+
     def _install_plugins(self) -> None:
         """Install selected plugins."""
         console.print("\n[bold]📦 Installing Plugins[/bold]")
@@ -392,7 +402,15 @@ class Installer:
                     / f"scripts/services/install_{plugin_name}.sh"
                 )
                 if script.exists():
-                    code, _, err = run_command(f"bash {script}", timeout=300)
+                    if plugin_name in self.INTERACTIVE_PLUGIN_SCRIPTS:
+                        console.print(
+                            f"[dim]{plugin_name} has its own interactive "
+                            f"setup — follow its prompts below:[/dim]"
+                        )
+                        result = subprocess.run(f"bash {script}", shell=True)
+                        code, err = result.returncode, ""
+                    else:
+                        code, _, err = run_command(f"bash {script}", timeout=300)
                     if code != 0:
                         print_warning(f"{plugin_name}: {err[:100]}")
                 else:
@@ -434,7 +452,8 @@ class Installer:
             "",
             "[bold]Useful commands:[/bold]",
             "  [cyan]ironshield status[/cyan]          — View all service statuses",
-            "  [cyan]ironshield manage[/cyan]          — Interactive management menu",
+            "  [cyan]ironshield tunnel list[/cyan]     — List tunnels and switch active one",
+            "  [cyan]ironshield plugin list[/cyan]     — List installed plugins",
             "  [cyan]ironshield benchmark[/cyan]       — Run benchmark tests",
             "  [cyan]ironshield user add NAME[/cyan]   — Add a VPN user",
             "  [cyan]ironshield logs openvpn[/cyan]    — View OpenVPN logs",
