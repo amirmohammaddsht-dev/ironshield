@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
@@ -250,3 +251,135 @@ class APIServer:
         )
         writer.write((response + "\n").encode("utf-8"))
         await writer.drain()
+
+
+# ══════════════════════════════════════════════
+#  Core Engine Entrypoint
+#
+#  NOTE: this section previously did not exist at all — the module only
+#  defined the APIServer class. `ironshield-core.service` runs this file
+#  via `python -m ironshield.api.server`, which imported the class,
+#  executed nothing, and exited with status 0 every ~5 seconds until
+#  systemd hit its restart-limit and marked the service "failed". This
+#  wires every core engine together and actually starts the daemon.
+# ══════════════════════════════════════════════
+
+
+async def _run() -> None:
+    """Wire up all core engines and run the API server until stopped."""
+    from ironshield.api.handlers import APIHandlers
+    from ironshield.core.benchmark_engine import BenchmarkEngine
+    from ironshield.core.config_engine import ConfigEngine
+    from ironshield.core.failover_engine import FailoverEngine
+    from ironshield.core.health_check import HealthCheckEngine
+    from ironshield.core.monitoring import MonitoringEngine
+    from ironshield.core.plugin_manager import PluginManager
+    from ironshield.core.service_manager import ServiceManager
+    from ironshield.core.smart_routing import SmartRoutingEngine
+    from ironshield.core.tunnel_manager import TunnelManager
+    from ironshield.db.database import Database
+    from ironshield.services.base import ServerRole
+
+    logger.info("Starting IronShield Core Engine...")
+
+    # ── Config & DB ────────────────────────────
+    cfg = ConfigEngine()
+    cfg.load()
+    role = ServerRole(cfg.get("ironshield.role", "iran"))
+    foreign_ip = cfg.get("server.foreign.ip", "") or ""
+
+    db = Database()
+    db.init()
+
+    # ── Plugins & Services ─────────────────────
+    pm = PluginManager(server_role=role, global_config=cfg.get_all())
+    pm.discover()
+
+    sm = ServiceManager(plugin_manager=pm, config_engine=cfg, db=db, server_role=role)
+
+    tm = TunnelManager(plugin_manager=pm, db=db)
+    tm.sync_tunnels_to_db()
+
+    routing = SmartRoutingEngine(tunnel_manager=tm, db=db)
+
+    failover = FailoverEngine(plugin_manager=pm, routing_engine=routing, db=db)
+
+    be = BenchmarkEngine(
+        plugin_manager=pm, tunnel_manager=tm, db=db, foreign_ip=foreign_ip
+    )
+
+    monitoring = MonitoringEngine(plugin_manager=pm, db=db, server_label=role.value)
+
+    def _on_service_failure(service_name, health, consecutive_failures=1) -> None:
+        # HealthCheckEngine calls this synchronously; hand off to the
+        # async FailoverEngine handler via the running event loop.
+        asyncio.create_task(
+            failover.handle_service_failure(service_name, health, consecutive_failures)
+        )
+
+    def _on_system_alert(resource, value, level) -> None:
+        asyncio.create_task(failover.handle_system_alert(resource, value, level))
+
+    health = HealthCheckEngine(
+        plugin_manager=pm,
+        db=db,
+        server_label=role.value,
+        on_service_failure=_on_service_failure,
+        on_system_alert=_on_system_alert,
+    )
+
+    # ── API Server ──────────────────────────────
+    handlers = APIHandlers(
+        plugin_manager=pm,
+        service_manager=sm,
+        tunnel_manager=tm,
+        benchmark_engine=be,
+        routing_engine=routing,
+        monitoring_engine=monitoring,
+        config_engine=cfg,
+        db=db,
+    )
+
+    server = APIServer()
+    server.register_many(handlers.get_handler_map())
+
+    # ── Background loops ────────────────────────
+    background_tasks = [
+        asyncio.create_task(tm.start_monitoring()),
+        asyncio.create_task(be.start()),
+        asyncio.create_task(monitoring.start()),
+        asyncio.create_task(health.start()),
+    ]
+
+    # ── Graceful shutdown ────────────────────────
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, stop_event.set)
+
+    server_task = asyncio.create_task(server.start())
+
+    await stop_event.wait()
+    logger.info("Shutdown signal received, stopping IronShield Core Engine...")
+
+    tm.stop_monitoring()
+    be.stop()
+    monitoring.stop()
+    health.stop()
+    await server.stop()
+
+    server_task.cancel()
+    for task in background_tasks:
+        task.cancel()
+    await asyncio.gather(*background_tasks, server_task, return_exceptions=True)
+
+    logger.info("IronShield Core Engine stopped.")
+
+
+def main() -> None:
+    """Synchronous entrypoint for `python -m ironshield.api.server`."""
+    asyncio.run(_run())
+
+
+if __name__ == "__main__":
+    main()
