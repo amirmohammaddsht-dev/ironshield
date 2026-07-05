@@ -407,7 +407,18 @@ class Installer:
                             f"[dim]{plugin_name} has its own interactive "
                             f"setup — follow its prompts below:[/dim]"
                         )
-                        result = subprocess.run(f"bash {script}", shell=True)
+                        # The progress bar is a Rich Live widget that
+                        # repaints itself in the background several times
+                        # per second. Phormal writes its own menu directly
+                        # to the same terminal region, so the two redraws
+                        # fight over the screen (menu appears, gets wiped
+                        # by the next progress-bar refresh, reappears...).
+                        # Pause the live display while it has control.
+                        progress.stop()
+                        try:
+                            result = subprocess.run(f"bash {script}", shell=True)
+                        finally:
+                            progress.start()
                         code, err = result.returncode, ""
                     else:
                         code, _, err = run_command(f"bash {script}", timeout=300)
