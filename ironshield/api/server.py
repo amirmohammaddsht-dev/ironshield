@@ -304,9 +304,7 @@ async def _run() -> None:
 
     failover = FailoverEngine(plugin_manager=pm, routing_engine=routing, db=db)
 
-    be = BenchmarkEngine(
-        plugin_manager=pm, tunnel_manager=tm, db=db, foreign_ip=foreign_ip
-    )
+    be = BenchmarkEngine(plugin_manager=pm, tunnel_manager=tm, db=db, foreign_ip=foreign_ip)
 
     monitoring = MonitoringEngine(plugin_manager=pm, db=db, server_label=role.value)
 
