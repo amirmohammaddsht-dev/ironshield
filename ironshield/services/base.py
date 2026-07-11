@@ -390,15 +390,14 @@ class BaseService(abc.ABC):
         Override for custom update logic.
         """
         from ironshield.utils.system import run_command
+        import inspect
         from pathlib import Path
 
-        update_script = (
-            Path(__file__).parent.parent.parent
-            / "plugins"
-            / self.meta.category.value
-            / self.meta.name
-            / "update.sh"
-        )
+        plugin_dir = getattr(self, "_plugin_dir", None)
+        if plugin_dir is None:
+            plugin_dir = Path(inspect.getfile(type(self))).parent
+
+        update_script = plugin_dir / "update.sh"
 
         if not update_script.exists():
             return Result.fail(f"Update script not found: {update_script}")

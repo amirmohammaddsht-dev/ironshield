@@ -143,6 +143,8 @@ class PluginManager:
         except Exception as e:
             raise PluginLoadError(f"Failed to instantiate {meta.name}: {e}") from e
 
+        instance._plugin_dir = plugin_path
+
         # 7. Register
         self._registry[meta.name] = instance
         self._meta_registry[meta.name] = meta
