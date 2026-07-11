@@ -112,7 +112,9 @@ class AuthMiddleware:
 
             with self._db.session() as s:
                 user = s.query(User).filter_by(telegram_id=user_id, is_active=True).first()
-                return user is not None and not user.is_expired
+                if not user or user.is_expired or user.is_blocked:
+                    return False
+                return True
         except Exception:
             return False
 
