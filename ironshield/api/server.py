@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from ironshield.utils.logger import get_logger
+from ironshield.utils.security import constant_time_compare
 
 logger = get_logger("api.server")
 
@@ -42,6 +43,10 @@ class APIServer:
         socket_path: Path = SOCKET_PATH,
         api_key: Optional[str] = None,
     ):
+        if api_key == "":
+            raise ValueError(
+                "api_key must not be an empty string; use None to disable authentication"
+            )
         self._socket_path = socket_path
         self._api_key = api_key
         self._handlers: Dict[str, Callable] = {}
@@ -146,9 +151,9 @@ class APIServer:
             params = request.get("params", {})
 
             # API key validation (if configured)
-            if self._api_key:
+            if self._api_key is not None:
                 token = request.get("token", "")
-                if token != self._api_key:
+                if not constant_time_compare(token, self._api_key):
                     await self._send_error(writer, request_id, "Unauthorized")
                     return
 

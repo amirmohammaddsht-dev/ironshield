@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from ironshield.agent.collector import AgentCollector
 from ironshield.utils.logger import get_logger
+from ironshield.utils.security import constant_time_compare
 from ironshield.version import __version__
 
 logger = get_logger("agent.api")
@@ -55,6 +56,10 @@ class AgentAPIServer:
         port: int = DEFAULT_PORT,
         api_key: Optional[str] = None,
     ):
+        if api_key == "":
+            raise ValueError(
+                "api_key must not be an empty string; use None to disable authentication"
+            )
         self.collector = collector
         self.host = host
         self.port = port
@@ -156,9 +161,9 @@ class AgentAPIServer:
         """Route request to appropriate handler."""
 
         # API key check
-        if self.api_key:
+        if self.api_key is not None:
             provided = headers.get("x-agent-key", "")
-            if provided != self.api_key:
+            if not constant_time_compare(provided, self.api_key):
                 return 401, {"error": "Unauthorized"}
 
         # Route matching
