@@ -270,6 +270,65 @@ class APIServer:
 # ══════════════════════════════════════════════
 
 
+def _load_routing_config(db) -> Any:
+    """
+    Build a RoutingConfig (ironshield.core.smart_routing.RoutingConfig)
+    from DB-seeded `routing.*` Settings (F-005), falling back to
+    RoutingConfig's own code defaults for any field that is missing or
+    fails validation.
+
+    Scope note (F-005): `routing.stability_bonus` is intentionally NOT
+    read here — it is not currently seeded by
+    Database._seed_default_settings, and adding that seed is a
+    separate, smaller change tracked outside this fix.
+    `stability_bonus` always uses RoutingConfig's code default.
+
+    Defensive validation: Database.get_setting() casts a stored value
+    based on its `value_type` hint, but on a cast failure it returns
+    the RAW STRING unchanged rather than the caller's `default`
+    (confirmed by direct inspection of Database._cast_value). This
+    function never trusts get_setting()'s return type — every field is
+    explicitly type-checked before being used to build RoutingConfig,
+    with a fallback to the code default and a logged warning on any
+    mismatch. A missing setting (get_setting returns None, the sentinel
+    passed below) is treated as "not customized" and silently uses the
+    code default — only a *present but wrong-typed* value is warned
+    about.
+    """
+    from ironshield.core.smart_routing import RoutingConfig
+
+    def _validated(key: str, expected_types: tuple) -> Any:
+        value = db.get_setting(key, None)
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, expected_types):
+            logger.warning(
+                f"Invalid {key} setting ({value!r}); using code default"
+            )
+            return None
+        return value
+
+    kwargs: Dict[str, Any] = {}
+
+    mode = _validated("routing.mode", (str,))
+    if mode is not None:
+        kwargs["mode"] = mode
+
+    cooldown_minutes = _validated("routing.cooldown_minutes", (int,))
+    if cooldown_minutes is not None:
+        kwargs["cooldown_minutes"] = cooldown_minutes
+
+    min_score_diff = _validated("routing.min_score_diff", (int, float))
+    if min_score_diff is not None:
+        kwargs["min_score_difference"] = float(min_score_diff)
+
+    consecutive_failures = _validated("routing.consecutive_failures", (int,))
+    if consecutive_failures is not None:
+        kwargs["consecutive_failures"] = consecutive_failures
+
+    return RoutingConfig(**kwargs)
+
+
 async def _run() -> None:
     """Wire up all core engines and run the API server until stopped."""
     from ironshield.api.handlers import APIHandlers
@@ -305,7 +364,11 @@ async def _run() -> None:
     tm = TunnelManager(plugin_manager=pm, db=db)
     tm.sync_tunnels_to_db()
 
-    routing = SmartRoutingEngine(tunnel_manager=tm, db=db)
+    routing = SmartRoutingEngine(
+        tunnel_manager=tm,
+        db=db,
+        config=_load_routing_config(db),
+    )
 
     failover = FailoverEngine(plugin_manager=pm, routing_engine=routing, db=db)
 
