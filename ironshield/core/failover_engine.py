@@ -328,7 +328,7 @@ class FailoverEngine:
         try:
             with self.db.session() as s:
                 event = s.get(FailoverEvent, event_id)
-                if event and event.downtime_seconds:
+                if event and event.downtime_seconds is not None:
                     return event.downtime_seconds
         except Exception:
             pass
