@@ -65,10 +65,7 @@ from prior documents) and covered here:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
-
-import pytest
 
 from ironshield.bot.middlewares.auth import AuthMiddleware
 
